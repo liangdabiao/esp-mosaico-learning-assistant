@@ -1,0 +1,15 @@
+# ESP-IDF build artifacts and component manager caches
+# (managed_components is restored by the committed dependencies.lock)
+build/
+managed_components/
+.codex-runs/
+
+# Host/simulator build and test binaries
+build-sim/
+pc/build/
+*.exe
+
+# Local environment and private data
+sdkconfig.old
+*.local
+.env
