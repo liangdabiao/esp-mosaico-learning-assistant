@@ -28,6 +28,69 @@
 
 ![选题示意](docs/assets/questions-demo.png)
 
+## 它是怎么工作的
+
+### 架构：一个脑子、三个工人
+
+设备上跑的是三层结构：**界面任务**是唯一的"脑子"（10 个页面的状态机，只管显示和收指令）；**工人任务**干所有脏活（相机、云端调用、扬声器）；**录音任务**独占麦克风。三者之间只靠队列和"代号"传递信息——每次新操作领一个递增代号，中途取消后旧结果自动作废，保证屏幕上永远不会串台。
+
+```mermaid
+flowchart TB
+    subgraph cloud["阿里云百炼 · DashScope（用户自己的 API Key）"]
+        VL["qwen3-vl-plus<br/>看图认题 / 分步讲解"]
+        ASR["qwen3-asr-flash<br/>语音识别"]
+        TTS["qwen3-tts-flash<br/>朗读合成"]
+    end
+
+    subgraph device["ESP-Mosaico 设备 · ESP32-S31 · 16MB Flash"]
+        LM["界面任务 · learning_model 状态机<br/>10 个页面 · 只管显示和收指令"]
+        CAM["相机模块<br/>实时取景 / 拍照转 JPEG<br/>照片只存内存不落盘"]
+        PROV["云端调用模块<br/>带代号防串台 · TLS 证书校验"]
+        SPK["扬声器播放<br/>音量实时可调"]
+        MIC["录音任务 · 麦克风 16kHz<br/>最长 30 秒 WAV"]
+        NET["网络模块<br/>家庭 Wi-Fi + Learn-Setup 配置热点<br/>配置保存在 NVS"]
+        GSP["GSP 1.5.1 UI 引擎 · 480×480 触摸屏"]
+        REC["Recovery 契约层<br/>官方刷机通道始终可达"]
+    end
+
+    LM -- "指令队列：拍照/提问/朗读…" --> CAM
+    LM -- "指令队列" --> PROV
+    PROV -- "消息队列：回答/识别文字/状态" --> LM
+    CAM -- "消息队列：照片就绪" --> LM
+    MIC -- "音频锁保护写入" --> PROV
+    PROV -- "HTTPS" --> VL
+    PROV -- "HTTPS" --> ASR
+    PROV -- "HTTPS" --> TTS
+    LM --- GSP
+    NET --- PROV
+    REC --- device
+```
+
+### 核心流程：拍题选题 与 语音提问
+
+两个入口，汇合到同一个讲解页；讲解之后可以换一题（回到同一张照片的清单，不用重拍）、追问（AI 自动结合原图和之前的问答）、朗读。
+
+```mermaid
+flowchart TB
+    HOME["首页"]
+
+    HOME -->|"拍题讲解"| VIEW["实时取景<br/>可开补光 / 180° 朝向补偿"]
+    VIEW -->|"按快门"| PHOTO["确认照片<br/>不清楚可重拍"]
+    PHOTO -->|"识别题目"| IDX["云端只列题不解答<br/>返回：题号 + 简短题干 + 位置"]
+    IDX --> LIST["选题页 · 每页 3 题，可翻页<br/>最多 24 题"]
+    LIST -->|"点选要讲的那道"| EXPLAIN["分步讲解页<br/>复述题意 → 提示 → 分步 → 答案与检验"]
+
+    HOME -->|"问个问题"| RECORD["按住 AI 键录音<br/>最长 30 秒"]
+    RECORD -->|"松开"| ASRP["云端语音识别"]
+    ASRP --> REVIEW["识别确认页<br/>翻看文字，错了可重新说"]
+    REVIEW -->|"确认发送"| QA["提问 · 结合当前题与原图"]
+    QA --> EXPLAIN
+
+    EXPLAIN --> MORE["换一题 / 追问 / 朗读"]
+    MORE -->|"换一题：回到同一张照片"| LIST
+    MORE -->|"追问：结合原图与上下文"| EXPLAIN
+```
+
 ## 需要准备什么
 
 | 东西 | 说明 |
